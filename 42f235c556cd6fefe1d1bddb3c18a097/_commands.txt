@@ -1,0 +1,16 @@
+#Build Your Binaries
+
+c:\Windows\Microsoft.NET\Framework\v2.0.50727\csc.exe a.cs
+c:\Windows\Microsoft.NET\Framework\v2.0.50727\csc.exe b.cs
+c:\Windows\Microsoft.NET\Framework\v2.0.50727\csc.exe c.cs
+
+# Create Your Patch
+# You need Windows 7 SDK 
+"C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\mpatch.exe" a.exe b.exe dbi_patch
+
+#Apply Your Patch
+#Patch c.exe so it looks like b.exe
+"C:\Program Files\Microsoft SDKs\Windows\v7.1\Bin\apatch.exe" dbi_patch a.exe c.exe
+
+#Compare
+fc b.exe c.exe

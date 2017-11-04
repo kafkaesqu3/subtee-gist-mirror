@@ -1,0 +1,1 @@
+Enumerates WMI providers, the DLLs that back the provider, and the classes hosted by the provider.

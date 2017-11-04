@@ -1,0 +1,1 @@
+A simple PoC shellcode runner that works in PowerShell Core on Nano Server and demonstrates how to call Win32 APIs

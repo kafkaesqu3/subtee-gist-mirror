@@ -1,0 +1,6 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Classes\CLSID\{97d47d56-3777-49fb-8e8f-90d7e30e1a1e}]
+
+[HKEY_CURRENT_USER\Software\Classes\CLSID\{97d47d56-3777-49fb-8e8f-90d7e30e1a1e}\InProcServer32]
+@="C:\\Users\\Administrator\\Documents\\Visual Studio 2015\\Projects\\ClassLibrary2\\ClassLibrary2\\bin\\x86\\Debug\\ClassLibrary2.dll"

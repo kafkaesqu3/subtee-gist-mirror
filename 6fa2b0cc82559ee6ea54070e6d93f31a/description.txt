@@ -1,0 +1,1 @@
+MSBuild Powershell Script XML template

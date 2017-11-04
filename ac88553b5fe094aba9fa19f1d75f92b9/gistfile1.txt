@@ -1,0 +1,664 @@
+￼
+
+
+An Automation Object for Dynamic DLL Calls
+Here's an OLE automation object for dynamically declaring and accessing functions in external DLLs  
+ November 01, 1998 URL:http://www.drdobbs.com/windows/an-automation-object-for-dynamic-dll-cal/210200078   Jeff Stong has been developing DOS, Windows, and Windows NT based applications for 10 years. Jeff can be contacted at Jeff_V_Stong@msn.com.
+
+You can access external DLLs from Visual Basic by using the Declare statement to declare the name of the function you want to call and the DLL that it resides in. VBScript, however, doesn't support the Declare statement. This article presents an OLE automation object that lets VBScript (or any other environment that can access automation objects) dynamically declare and access functions in external DLLs.
+
+Using the DynamicWrapper Object
+
+The name of the automation object I created is DynamicWrapper, and you can declare it just like any other object in VBScript:
+
+Dim UserWrap As Object
+Set UserWrap = CreateObject("DynamicWrapper")
+
+
+Initially, the only method the DynamicWrapper object supports is Register(). You invoke the Register() method to describe an external DLL function before calling it. DynamicWrapper is an unusual automation object in that it dynamically adds new methods at runtime. The basic idea is that you first invoke DynamicWrapper.Register() to declare some DLL function named (for example) "SomeFunc", and the DynamicWrapper object suddenly supports a method called SomeFunc() that you can invoke to access the external DLL function. You can register and then invoke any number of external functions with a single DynamicWrapper object.
+
+You have to call Register() to tell the DynamicWrapper object all the details about the external DLL function you want to call, including the name, calling convention, number and type of parameters, and type of return value. The following syntax is used to register a procedure:
+
+[result = ] object.Register ,  [,,...]
+
+
+For example, the standard Win32 function MessageBox() resides in the DLL user32.dll and has the following C prototype:
+
+int MessageBox(HWND hWnd, LPCTSTR lpText,
+    LPCTSTR lpCaption, UINT uType);
+
+
+To register this function, you would call Register() like this:
+
+UserWrap.Register "user32.dll", "MessageBoxA", _
+    "i=hssu", "f=s", "r=l"
+
+
+The first two parameters are obviously the name of the DLL and the name of the function to call. If you're not certain that the DLL resides in a directory in the current command search path, then you should use a fully qualified pathname. Also note that the function named here is "MessageBoxA" and not "MessageBox". Win32 (and some third-party DLLs as well) often supports both an ANSI and a Unicode version of the same function, so there is no actual user32.dll export called "MessageBox", but there is a "MessageBoxA" and a "MessageBoxW". You must know the exact details of the external DLL function you want to call in order to invoke it correctly. Using a command like dumpbin /EXPORTS target.dll can be helpful in verifying the exported name of a DLL function.
+
+After the function name comes three optional tag parameters that describe the function's calling convention, input parameters, and return type. You can list these optional parameters in any order, but they must be separated by commas.
+
+The tag that describes the input parameters of the function takes the following form:
+
+i=<flag>*<flag>*
+
+
+where <flag> is one of the flags shown in Table 1, and each flag describes (in order) the type of a parameter that the function takes. The function MessageBoxA() takes a window handle, two strings, and an unsigned integer, which can be described with the string "i=hssu".
+
+[Click image to view at full size]
+￼
+Table 1: Parameter type flags.
+
+A function's calling sequence is the specification for exactly how it expects parameters to be pushed on the stack and returned, who is responsible for adjusting the stack pointer, and so on. Most exported DLL functions use a common calling sequence, but there are important exceptions, and DynamicWrapper can handle most of them. The syntax for the optional argument that details a function's calling sequence is:
+
+f=<flag><flag>*
+
+where <flag> is one of the flags shown in Table 2. If you omit this optional argument, Register() uses "f=ms" as the default. Some flags are mutually exclusive as noted in Table 2. The default is correct for most DLL functions.
+
+[Click image to view at full size]
+￼
+Table 2: Calling sequence flags.
+
+Finally, if the function you want to call returns a value, you must specify the type with an argument of the form:
+
+r=<flag>
+
+
+where <flag> is one of the characters described in Table 1. If the function returns no value, simply omit this parameter when you call Register().
+After you call Register() to declare the function, you can then call it using the syntax:
+
+Object.<procname>[parameters]
+
+
+Using the previous example, you would invoke MessageBoxA() (the ANSI version of MessageBox()) like this:
+
+UserWrap.MessageBoxA Null, "Hello World", "VBScript", 3
+
+
+How DynamicWrapper Works
+
+The code to implement the DynamicWrapper object relies on Ton Plooy's DynaCall() code for creating dynamic calls to DLL functions at runtime. This month's code archive includes a copy of that code. The layer above DynaCall() that does all of the OLE automation work resides in the C++ class CDynamicWrapper in dynwrap.cpp (Listing One).
+
+//-----------------------------------------------------------------
+// Dynamic Procedure Call COM object.  Jeff Stong 1998
+//-----------------------------------------------------------------
+#define  WIN32_LEAN_AND_MEAN
+#define INC_OLE2
+#include <windows.h>
+#include <malloc.h>
+
+// Using non-DLL version of DynaCall, so don't need to have the
+// methods imported.
+#undef DECLSPEC_IMPORT
+#define DECLSPEC_IMPORT
+extern "C" {
+#include "DynaCall.h"
+}
+
+// Global optimizations cause crash in release builds made with
+// Microsoft 32-bit C/C++ Compiler Version 11.00.7022
+#ifdef _MSC_VER
+#pragma optimize("g",off)
+#endif
+
+// Allocate on-the-stack LPSTR from LPCWSTR
+LPSTR W2AHelp(LPSTR a, LPCWSTR w, int n)
+{
+  a[0] = '\0';
+  WideCharToMultiByte(CP_ACP, 0, w, -1, a, n, NULL, NULL);
+  return a;
+}
+#define W2A(w) (((LPCWSTR)w == NULL) ? NULL : (_clen = \
+    (lstrlenW(w)+1)*2,W2AHelp((LPSTR) _alloca(_clen), w, _clen)))
+int _clen;
+
+// Locate index for which c is equal to id in array of n elements
+template <class T> UINT Find(WCHAR c, const T* arr, UINT n)
+{
+  for (UINT i = 0; i < n; i++)
+    if (arr[i].id == c) 
+      return i;
+  return -1;
+}
+
+// Allowable tags procedure calling convention
+class CDynCall;
+typedef struct tagTAGINFO
+{
+  WCHAR id;     // Character
+  HRESULT (*pfn)(CDynCall*, LPWSTR, int);  
+    // Parsing callback procedure
+} TAGINFO;
+
+HRESULT iParse(CDynCall* p, LPWSTR w, int c);
+HRESULT rParse(CDynCall* p, LPWSTR w, int c);
+HRESULT fParse(CDynCall* p, LPWSTR w, int c);
+
+const TAGINFO TagInfo[] =
+{
+  {'i',iParse}, // Input arguments (see ARGTYPEINFO entries)
+  {'r',rParse}, // Return type (see ARGTYPEINFO entries)
+  {'f',fParse}, // Calling convention (see FLAGINFO entries)
+};
+#define FindIndexOfTag(wc) \
+  Find<TAGINFO>(wc,TagInfo,sizeof(TagInfo)/sizeof(TAGINFO))
+
+// Parameter and return values 
+typedef struct tagARGTYPEINFO
+{
+  WCHAR id;      // Character
+  UINT size;     // Size of type
+  VARTYPE vt;    // Compatible VARTYPE
+} ARGTYPEINFO;
+
+const ARGTYPEINFO ArgInfo[] = 
+{
+{'a', sizeof(IDispatch*),    VT_DISPATCH}, // a   IDispatch*
+{'c', sizeof(unsigned char), VT_I4},       // c   signed char  
+{'d', sizeof(double),        VT_R8},       // d   8 byte real 
+{'f', sizeof(float),         VT_R4},       // f   4 byte real 
+{'k', sizeof(IUnknown*),     VT_UNKNOWN},  // k   IUnknown* 
+{'h', sizeof(long),          VT_I4},       // h   HANDLE 
+{'l', sizeof(long),          VT_I4},       // l   long 
+{'p', sizeof(void*),         VT_PTR},      // p   pointer 
+{'s', sizeof(BSTR),          VT_LPSTR},    // s   string 
+{'t', sizeof(short),         VT_I2},       // t   short 
+{'u', sizeof(UINT),          VT_UINT},     // u   unsigned int 
+{'w', sizeof(BSTR),          VT_LPWSTR},   // w   wide string 
+};
+#define FindIndexOfArg(c) \
+  Find<ARGTYPEINFO> \
+    (c,ArgInfo,sizeof(ArgInfo)/sizeof(ARGTYPEINFO))
+
+// Calling conventions flags
+typedef struct tagFLAGINFO
+{
+  WCHAR id;     // Character
+  WORD  wFlag;  // Flag for id
+  WORD  wMask;  // Mask for flag value replacement
+} FLAGINFO;
+
+const FLAGINFO FlagInfo[] =
+{
+  {'m', DC_MICROSOFT,    ~(DC_MICROSOFT|DC_BORLAND)},
+  {'b', DC_BORLAND,      ~(DC_MICROSOFT|DC_BORLAND)},
+  {'s', DC_CALL_STD,     ~(DC_CALL_STD|DC_CALL_CDECL)},
+  {'c', DC_CALL_CDECL,   ~(DC_CALL_STD|DC_CALL_CDECL)},
+  {'4', DC_RETVAL_MATH4, ~(DC_RETVAL_MATH4|DC_RETVAL_MATH8)},
+  {'8', DC_RETVAL_MATH8, ~(DC_RETVAL_MATH4|DC_RETVAL_MATH8)},
+};
+
+#define FindIndexOfFlag(c) \
+  Find<FLAGINFO>(c,FlagInfo,sizeof(FlagInfo)/sizeof(FLAGINFO))
+
+// DISPID for "Register" method and all those after
+#define REGISTERDISPID 1
+DISPID dispidLastUsed = REGISTERDISPID;
+
+// CServer class holds global object count
+class CServer
+{
+public:
+  CServer() : m_hInstance(NULL), m_dwRef(0)
+  {}
+  HINSTANCE m_hInstance;
+  DWORD m_dwRef;
+};
+CServer m_Server;
+
+// CDynCall class manages dynamic procedure calls
+class CDynCall
+{
+public:
+  // ctor/dtor
+  CDynCall() : dwAddress(0),
+               cArgs(0), 
+               iArg(NULL), 
+               iRet(-1), 
+               wFlags(DC_MICROSOFT|DC_CALL_STD),
+               hDLL(NULL),
+               pNext(NULL),
+               bstrMethod(NULL)
+    {}
+  ~CDynCall() 
+  { 
+    SysFreeString(bstrMethod);
+    FreeLibrary(hDLL);
+    delete [] iArg; 
+  }
+
+  // Equivalance operators used by CDynCallChain class
+  bool operator==(DISPID l) const
+  { return l == dispid; }
+  bool operator==(LPCWSTR l) const
+  { return !lstrcmpiW(l,bstrMethod); }
+
+  // Register the procedure
+  HRESULT Register(DISPPARAMS* pDispParams, VARIANT* pVarResult)
+  {
+     // Require at least DLL and procedure name
+    if (pDispParams->cArgs < 2)
+      return DISP_E_BADPARAMCOUNT;
+
+    VARIANTARG* rgvarg = pDispParams->rgvarg;
+    int cArgs = pDispParams->cArgs;
+    HRESULT hr = E_INVALIDARG;
+
+    // Can the library be loaded?
+    if ((hDLL = LoadLibraryW(rgvarg[cArgs-1].bstrVal)) != NULL)
+    {
+      // Find the address of the procedure
+      bstrMethod = SysAllocString(rgvarg[cArgs-2].bstrVal);
+      if ((dwAddress = SearchProcAddress(hDLL,W2A(bstrMethod))))
+      {
+        // Load the tags describing the procedure
+        hr = S_OK;
+        for (int i = cArgs-3; i >= 0 && SUCCEEDED(hr); i--)
+          hr = GetTags(rgvarg[i].bstrVal);
+      }
+    }
+    if (SUCCEEDED(hr))
+      dispid = ++dispidLastUsed; // Assign a dispid
+    if (pVarResult) // Return result if requested by caller
+    {
+      V_VT(pVarResult) = VT_BOOL;
+      V_BOOL(pVarResult) = SUCCEEDED(hr);
+    }
+    return hr;
+  }
+
+  // Parse the tags
+  HRESULT GetTags(LPWSTR wstrParms)
+  {
+    while (*wstrParms && iswspace(*wstrParms))
+      wstrParms++;
+    *wstrParms = towlower(*wstrParms);
+
+    // Find the tag, check format and invoke callback
+    int len = lstrlenW(wstrParms);
+    UINT i = FindIndexOfTag(*wstrParms);
+    if ((i == -1) || (len < 3) || (wstrParms[1] != L'='))
+      return E_INVALIDARG;
+    wstrParms += 2;
+    return TagInfo[i].pfn(this,wstrParms,len-2);
+  }
+
+  // Invokes the procedure
+  HRESULT Invoke(DISPPARAMS* pDispParams, VARIANT* pVarResult)
+  {
+    // Check argument count
+    if (cArgs != pDispParams->cArgs)
+      return DISP_E_BADPARAMCOUNT;
+
+    HRESULT hr = S_OK;
+
+    // Allocate DYNPARM structure on stack
+    DYNAPARM* Parms = (DYNAPARM*)_alloca(sizeof(DYNAPARM)*cArgs);
+    ZeroMemory(Parms,sizeof(DYNAPARM) * cArgs);
+    DYNAPARM* Parm = Parms + (cArgs - 1); // Work last to first
+    VARIANTARG* rgvarg = pDispParams->rgvarg;
+
+    VARIANT va;
+    VariantInit(&va);
+
+    // Fill in each DYNPARM entry
+    for (UINT i = 0; (i < cArgs) && !FAILED(hr); i++, Parm--)
+    {
+      // Parameter width from table
+      Parm->nWidth = ArgInfo[iArg[i]].size; 
+      if (Parm->nWidth > 4)
+        Parm->dwFlags = DC_FLAG_ARGPTR;
+
+      // Parameter value
+      VariantClear(&va);
+      hr = VariantChangeType(&va,&rgvarg[i],0,ArgInfo[iArg[i]].vt);
+      if (SUCCEEDED(hr))
+      {
+        if (Parm->dwFlags & DC_FLAG_ARGPTR)
+        {
+          Parm->pArg = _alloca(Parm->nWidth);
+          CopyMemory(Parm->pArg,&va.byref,Parm->nWidth);
+        }
+        else
+          Parm->pArg = va.byref;
+      }
+      else
+      {
+        // Cases for which VariantChangeType doesn't work
+        hr = S_OK;
+        switch (ArgInfo[iArg[i]].vt)
+        {
+        case (VT_I4): // Handle
+          if (rgvarg[i].vt <= VT_NULL)
+            Parm->pArg = 0;
+          else
+            hr = E_INVALIDARG;
+          break;
+
+        case (VT_LPSTR):
+          Parm->pArg = W2A(rgvarg[i].bstrVal);
+          break;
+
+        case (VT_LPWSTR):
+          Parm->pArg = rgvarg[i].bstrVal;
+          break;
+
+        default:
+          hr = E_INVALIDARG;
+          break;
+        }
+      }
+    }
+
+    // Make the dynamic call
+    RESULT rc;
+    if (SUCCEEDED(hr))
+      rc = DynaCall(wFlags,dwAddress,cArgs,Parms,NULL,0);
+
+    // Get the return value if requested
+    if (pVarResult)
+    {
+      CopyMemory(&pVarResult->lVal,&rc.Long,ArgInfo[iRet].size);
+      pVarResult->vt = ArgInfo[iRet].vt;
+    }
+
+    // Cleanup
+    VariantClear(&va);
+
+    // Done
+    return hr;
+  }
+
+  BSTR bstrMethod;   // Name of procedure
+  DISPID dispid;     // Assigned DISPID
+  HINSTANCE hDLL;    // Handle to DLL containing procedure
+  DWORD dwAddress;   // Address of procedure
+  WORD wFlags;       // Flags describing calling convention
+  UINT cArgs;        // Number of arguments
+  LPUINT iArg;       // Indexes to input arguments
+  UINT iRet;         // Index of return type
+  CDynCall* pNext;   // Pointer to next object in chain
+};
+
+// Parses the input arguments (i=)
+HRESULT iParse(CDynCall* pThis, LPWSTR w, int c)
+{
+  pThis->iArg = new UINT[c];
+  pThis->cArgs = c;
+  UINT* p = pThis->iArg + (c - 1);
+  for (; *w; w++)
+  {
+    UINT j = FindIndexOfArg(towlower(*w));
+    if (j == -1)
+      return E_INVALIDARG;
+    if (p)
+      *p = j;
+    p--;
+  }
+  return S_OK;
+}
+
+// Parses the return argument (r=)
+HRESULT rParse(CDynCall* pThis, LPWSTR w, int c)
+{
+  pThis->iRet = FindIndexOfArg(towlower(*w));
+  return (pThis->iRet != -1) ? S_OK : E_INVALIDARG;
+}
+
+// Parses the calling convention flags (f=)
+HRESULT fParse(CDynCall* pThis, LPWSTR w, int c)
+{
+  for (; *w; w++)
+  {
+    UINT i = FindIndexOfFlag(towlower(*w));
+    if (i == -1)
+      return E_INVALIDARG;
+    pThis->wFlags = 
+      (pThis->wFlags & FlagInfo[i].wMask) | FlagInfo[i].wFlag;
+  }
+  return S_OK;
+}
+
+// CDynCallChain class manages a simple CDynCall linked-list
+class CDynCallChain
+{
+public:
+  // ctor/dtor
+  CDynCallChain() : m_pFirst(NULL)
+  { }
+  ~CDynCallChain()
+  { 
+    while (m_pFirst)
+    {
+      CDynCall* p = m_pFirst;
+      m_pFirst = m_pFirst->pNext;
+      delete p;
+    }
+  }
+
+  // Find the DISPID for the given name s
+  DISPID FindDISPID(LPWSTR s)
+  {
+    CDynCall* p = Find(s);
+    if (p)
+      return p->dispid;
+    else if (!lstrcmpiW(s,L"Register"))
+      return REGISTERDISPID;
+    return DISPID_UNKNOWN;
+  }
+
+  // Register the procedure (creates a new CDynCall object and
+  // adds it to the chain)
+  HRESULT Register(DISPPARAMS* pDispParams, VARIANT* pVarResult)
+  {
+    CDynCall* p = new CDynCall;
+    if (!p)
+      return E_OUTOFMEMORY;
+    HRESULT hr = p->Register(pDispParams,pVarResult);
+    if (SUCCEEDED(hr))
+    {
+      p->pNext = m_pFirst;
+      m_pFirst = p;
+    }
+    else
+      delete p;
+    return hr;
+  }
+
+  // Invoke the procedure identifies by dispid
+  HRESULT Invoke(DISPID dispid, DISPPARAMS* pParams, 
+                 VARIANT* pResult)
+  {
+    CDynCall* p = Find(dispid);
+    if (p)
+      return p->Invoke(pParams,pResult);
+    else if (dispid == REGISTERDISPID)
+      return Register(pParams,pResult);
+    return DISPID_UNKNOWN;
+  }
+
+protected:
+  // Find CDynCall object in chain with value l of type T
+  template <class T> CDynCall* Find(T l)
+  {
+    for (CDynCall* p = m_pFirst; p; p = p->pNext)
+    {
+      if (*p == l)
+        break;
+    }
+    return p;
+  }
+
+protected:
+  CDynCall* m_pFirst; // First object in chain
+};
+
+// Template class that provides basic IUnknown implementation
+template <class T, const IID* piid>
+class CInterface : public T
+{
+public:
+  CInterface() : m_dwRef(0)
+  { m_Server.m_dwRef++; }
+  virtual ~CInterface()
+  { m_Server.m_dwRef--; }
+
+  STDMETHOD(QueryInterface)(REFIID riid, void** ppvObject)
+  {
+    if ((riid == IID_IUnknown) || (riid == *piid))
+    {
+      *ppvObject = (T*)static_cast<T*>(this);
+      m_dwRef++;
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+  STDMETHOD_(ULONG,AddRef)()
+  { return ++m_dwRef; }
+  STDMETHOD_(ULONG,Release)()
+  {
+    if (!(--m_dwRef))
+    {
+      delete this;
+      return 0;
+    }
+    return m_dwRef;
+  }
+  DWORD m_dwRef;
+};
+
+
+// COM class that provides for registering and invoking
+// dynamic procedure calls
+class CDynamicWrapper : public CInterface<IDispatch,&IID_IDispatch>
+{
+// IDispatch interface implementation
+public:
+    // These methods not implemented
+    STDMETHOD(GetTypeInfoCount)(UINT* pctinfo)
+    { return E_NOTIMPL;  }
+    STDMETHOD(GetTypeInfo)(UINT, LCID, ITypeInfo**)
+    { return E_NOTIMPL;  }
+
+    // Defer to CDynCallChain for everything else
+    STDMETHOD(GetIDsOfNames)(REFIID, LPOLESTR* rgszNames, 
+               UINT cNames, LCID, DISPID* rgDispId)
+    {
+      for (UINT i = 0; i < cNames; i++)
+      {
+        rgDispId[i] = m_Chain.FindDISPID(rgszNames[i]);
+        if (rgDispId[i] == DISPID_UNKNOWN)
+          return DISP_E_MEMBERNOTFOUND;
+      }
+      return S_OK;
+    }
+    STDMETHOD(Invoke)(DISPID dispIdMember, REFIID, LCID, WORD, 
+            DISPPARAMS* pDispParams, VARIANT* pVarResult,
+            EXCEPINFO* pExcepInfo, UINT *puArgErr)
+    {
+      return m_Chain.Invoke(dispIdMember,pDispParams,pVarResult);
+    }
+
+protected:
+  CDynCallChain m_Chain;
+};
+
+// Class factory to create CDynamicWrapper COM objects
+class CClassFactory : 
+  public CInterface<IClassFactory,&IID_IClassFactory>
+{
+public:
+// IClassFactory interface implementation
+  STDMETHOD(CreateInstance)(IUnknown* pUnkOuter, REFIID riid, 
+                void** ppvObject)
+  {
+    if (pUnkOuter)
+      return CLASS_E_NOAGGREGATION;
+    CDynamicWrapper* pObject = new CDynamicWrapper;
+    HRESULT hr = pObject->QueryInterface(riid,ppvObject);
+    if (FAILED(hr))
+      delete pObject;
+    return hr;
+  }
+  STDMETHOD(LockServer)(BOOL fLock)
+  { return CoLockObjectExternal(this,fLock,TRUE); }
+};
+
+// DllMain
+extern "C"
+BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID)
+{
+  if (dwReason == DLL_PROCESS_ATTACH)
+  {
+    m_Server.m_hInstance = hInstance;
+    DisableThreadLibraryCalls(hInstance);
+  }
+  return TRUE;
+}
+
+// Required COM in-proc server exports follow
+STDAPI DllRegisterServer(void)
+{
+  LPCSTR CLSIDVAL = "{202774D1-D479-11d1-ACD1-00A024BBB05E}";
+  LPCSTR CLASSKEY = 
+    "CLSID\\{202774D1-D479-11d1-ACD1-00A024BBB05E}\\InProcServer32";
+  LPCSTR PRODIDKEY = "DynamicWrapper\\CLSID";
+    HRESULT hr = E_FAIL;
+    HKEY key = NULL;
+    if (!RegCreateKey(HKEY_CLASSES_ROOT,CLASSKEY,&key))
+    {
+    char szModulePath[_MAX_PATH];
+    GetModuleFileName(m_Server.m_hInstance,szModulePath,
+              _MAX_PATH);
+    if(!RegSetValue(key,NULL,REG_SZ,szModulePath,0))
+    {
+      RegCloseKey(key);
+      if (!RegCreateKey(HKEY_CLASSES_ROOT,PRODIDKEY,&key))
+      {
+        if (!RegSetValue(key,NULL,REG_SZ,CLSIDVAL,0))
+          hr = S_OK;
+      }
+    }
+    }
+    RegCloseKey(key);
+    return hr;
+}
+
+STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv)
+{
+  const GUID CLSID_DynWrap = { 0x202774d1, 0xd479, 0x11d1, 
+      { 0xac, 0xd1, 0x0, 0xa0, 0x24, 0xbb, 0xb0, 0x5e } };
+  HRESULT hr = CLASS_E_CLASSNOTAVAILABLE;
+  if (rclsid == CLSID_DynWrap)
+  {
+    CClassFactory* pFactory = new CClassFactory;
+    if (FAILED(hr = pFactory->QueryInterface(riid,ppv)))
+      delete pFactory;
+    hr = S_OK;
+  }
+  return hr;
+}
+
+STDAPI DllCanUnloadNow()
+{ return (m_Server.m_dwRef) ? S_FALSE : S_OK; }
+
+//End of File
+
+Listing One
+
+OLE automation objects are COM objects that implement the IDispatch interface. For more information on the IDispatch interface, see the COM documentation. A program that wants to invoke a method provided by an automation object first calls IDispatch::GetIDsOfNames() to get the numeric ID (type DISPID) associated with the desired method, and then passes that ID to IDispatch::Invoke() to actually invoke that method with the desired set of parameters. IDispatch also allows an object to return detailed type information about methods and parameters supported. I chose not to support type information, so my implementation of IDispatch::GetTypeInfoCount() and IDispatch::GetTypeInfo() both simply return E_NOTIMPL. That means that tools that rely on type information (such as object browsers or compilers) won't work with DynamicWrapper objects, but that's okay since I'm really targeting VBScript and similar environments that don't rely on accessing object type information.
+
+The CDynamicWrapper implementations of GetIDsOfNames() and Invoke() rely primarily on an instance of the CDynCallChain class. This class is a linked list of CDynCall objects. The CDynCall class manages the information required to dynamically call a single registered procedure. When GetIDsofNames() is called, the CDynamicWrapper class defers to the CDynCallChain to find the DISPID of the given procedure name. When Invoke() is called, CDynamicWrapper again defers to the CDynCallChain instance, which locates and calls Invoke() on the appropriate CDynCall instance.
+
+The Registermethod causes CDynCallChain to create a new instance of CDynCall. It then calls CDynCall::Register(), which uses the input parameters to determine the DLL name and procedure name. The DLL is loaded and the procedure address located using SearchProcAddress(). The tags describing the input parameters, calling convention, and return type are then parsed. The tag parsing is table-driven and is easily modified to support additional parameter types. Finally, an unused DISPID is assigned to the new method. If the CDynCall instance successfully completes all of the proceeding steps, CDynCallChain adds the object to its linked list.
+
+When a client wants to call a previously registered procedure, say "MessageBoxA", it first passes that name to GetIDsOfNames(). The CDynCallChain instance searches its linked list for a CDynCall instance that matches the given procedure name and returns its DISPID. The client then calls Invoke(). The CDynCallChain instance again searches its linked list for a CDynCallinstance that matches the given DISPID, then calls CDynCall::Invoke().
+
+CDynCall::Invoke() parses the parameter list passed as an array of DISPPARAM structures. The previously stored input parameter information is used to convert the data in each DISPPARAM to the data type required by the exported DLL function. The exported DLL function is then called using Ton Plooy's DynaCall().DynaCall() returns a structure containing the return value. This value is packaged appropriately and returned to the client.
+
+The remaining classes and functions in the file are boilerplate code required to properly implement an in-proc COM server. See the COM documentation for further information on in-proc COM servers. Conclusion
+
+The DynamicWrapper object provides an enhancement to VBScript that is familiar to Visual Basic programmers and easy to use. In addition, the implementation of the DynamicWrapper object provides some useful insights into the flexibility of the OLE automation object model.
+
+
+Terms of Service | Privacy Statement | Copyright © 2017 UBM Tech, All rights reserved.

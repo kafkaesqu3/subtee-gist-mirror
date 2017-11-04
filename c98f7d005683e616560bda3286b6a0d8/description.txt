@@ -1,0 +1,1 @@
+Downloads Mimikatz From GitHub, Executes Inside of MsBuild.exe

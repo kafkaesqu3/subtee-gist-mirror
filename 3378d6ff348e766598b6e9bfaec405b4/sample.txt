@@ -1,0 +1,8 @@
+$T = New-PefKeyDownTrigger -CtrlC
+$Sb = { Write-Host [Math]::Sqrt([Math]::Pi)  }
+$S = New-PefTraceSession -Mode Linear -SaveOnStop -Path "C:\Traces\Simple" -Force -SaveAsParsed
+Add-PefMessageSource -PEFSession $S -Source Microsoft-Windows-Kernel-Process
+$T2 = New-PefMessageTrigger -PEFSession $S -Filter "Start" -Repeat
+Invoke-PefCustomAction -Script $Sb -Trigger $T2
+#Stop-PefTraceSession -PEFSession $S -Trigger $T
+Start-PefTraceSession -PEFSession $S 
