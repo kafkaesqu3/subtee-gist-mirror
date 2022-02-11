@@ -1,0 +1,1 @@
+Nuclei template to scan for log4shell (CVE-2021-44228).

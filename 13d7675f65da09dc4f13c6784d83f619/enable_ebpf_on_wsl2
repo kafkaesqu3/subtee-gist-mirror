@@ -1,0 +1,21 @@
+By default, EBPF programs will not run on WSL2 due to required kernel modules missing. The following example error is an 
+indication of this problem:
+  modprobe: ERROR: ../libkmod/libkmod.c:586 kmod_search_moddep() could not open moddep file '/lib/modules/4.19.84-microso
+  ft-standard/modules.dep.bin'
+  modprobe: FATAL: Module kheaders not found in directory /lib/modules/4.19.84-microsoft-standard
+  chdir(/lib/modules/4.19.84-microsoft-standard/build): No such file or directory
+
+To fix this you need to rebuild the WSL2 kernel with the missing kernel modules. The below instructions are for Ubuntu 18.04 WSL2.
+
+1. git clone https://github.com/microsoft/WSL2-Linux-Kernel.git
+2. cd WSL2-Linux-Kernel
+3. sudo apt install flex bison build-essential libelf-dev libncurses-dev  libssl-dev
+4. cp Microsoft/config-wsl .config
+5. Add the kernel flags specified in https://github.com/iovisor/bcc/blob/master/INSTALL.md#kernel-configuration to .config
+6. export KERNELRELEASE=4.19.84-microsoft-standard 
+    NOTE: Make sure the version corresponds to the version of WSL2. Run: uname -a
+7. make KERNELRELEASE=$KERNELRELEASE -j 4
+8. make KERNELRELEASE=$KERNELRELEASE modules -j 4
+9. sudo make KERNELRELEASE=$KERNELRELEASE modules_install 
+10. (confirm you can see files under /lib/modules/$(uname -r))
+11. sudo mount -t debugfs debugfs /sys/kernel/debug (for any apps that uses it since its not mounted by default)

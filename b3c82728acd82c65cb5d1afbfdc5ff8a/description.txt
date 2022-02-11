@@ -1,0 +1,1 @@
+Recompile your WSL2 kernel - support for snaps, apparmor, lxc, etc.

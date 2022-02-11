@@ -1,0 +1,1 @@
+SkullKatz - Execute Mimikatz from an image

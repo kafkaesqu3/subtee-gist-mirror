@@ -1,0 +1,13 @@
+## Inside Host System As Local Administrator
+
+1. Download and install free ngrok
+2. Execute `ngrok http 8080`
+3. Start the simple PowerShell WebShell 
+4. Browse to 127.0.0.1:4040 ; local ngrok request/response
+
+## Outside System - External
+
+1. Browse to the url created in step 2.
+   `https://exampleabc.ngrok.io/shell
+2. Default will just execute ipconfig on host and return response
+

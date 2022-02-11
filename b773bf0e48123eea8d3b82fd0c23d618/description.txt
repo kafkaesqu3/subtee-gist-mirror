@@ -1,0 +1,1 @@
+Compile and run C# code in memory to avoid anti-virus. Taken from a C# ransomware sample: https://www.bleepingcomputer.com/news/security/new-c-ransomware-compiles-itself-at-runtime/ However, this will still execute csc.exe and drop a dll to %temp% https://twitter.com/Laughing_Mantis/status/991018563296157696

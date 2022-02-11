@@ -1,0 +1,1 @@
+So you found a Jackson Deserialization Bug!  Great.  Now what? :)

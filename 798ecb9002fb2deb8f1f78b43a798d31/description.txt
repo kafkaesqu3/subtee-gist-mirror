@@ -1,0 +1,1 @@
+Tonelli-Shanks Implementation in c# - ref: https://en.wikipedia.org/wiki/Tonelli–Shanks_algorithm
